@@ -8,7 +8,7 @@ from .views import (
     RecipeViewSet,
     SubscribeView,
     SubscriptionsListView,
-    TagViewSet,
+    TagViewSet
 )
 
 router = routers.DefaultRouter()

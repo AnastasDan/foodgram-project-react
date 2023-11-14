@@ -1,9 +1,10 @@
 from django.core.exceptions import ObjectDoesNotExist
 from django.shortcuts import get_object_or_404
 
-from recipes.models import Ingredient, Recipe, RecipeIngredient
 from rest_framework import status
 from rest_framework.response import Response
+
+from recipes.models import Ingredient, Recipe, RecipeIngredient
 
 
 def add_or_remove_favorite_and_shopping_list(

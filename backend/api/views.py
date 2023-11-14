@@ -4,14 +4,6 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 
 from django_filters.rest_framework import DjangoFilterBackend
-from recipes.models import (
-    FavoriteRecipe,
-    Ingredient,
-    Recipe,
-    RecipeIngredient,
-    ShoppingList,
-    Tag,
-)
 from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import BaseFilterBackend
@@ -19,6 +11,15 @@ from rest_framework.pagination import BasePagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from recipes.models import (
+    FavoriteRecipe,
+    Ingredient,
+    Recipe,
+    RecipeIngredient,
+    ShoppingList,
+    Tag
+)
 from users.models import MyUser, Subscribe
 
 from .filters import IngredientFilter, RecipeFilter
@@ -31,7 +32,7 @@ from .serializers import (
     ShoppingListSerializer,
     SubscriptionSerializer,
     TagSerializer,
-    UserGETSerializer,
+    UserGETSerializer
 )
 from .utils import add_or_remove_favorite_and_shopping_list
 
