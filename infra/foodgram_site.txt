@@ -1,0 +1,4 @@
+IP: 158.160.0.243; 
+name_foodgram: https://foodgram-anastas.ru/; 
+login: review;
+password: 52340091Hh
