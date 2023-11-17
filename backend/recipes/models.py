@@ -1,10 +1,45 @@
 from django.core.validators import RegexValidator
 from django.db import models
+from django.db.models import Exists, OuterRef
 
 from foodgram.constants import MAX_CHAR_LENGTH, MAX_COLOR_LENGTH, REGEX
 from users.models import User
 
-from .querysets import RecipeManager
+
+class RecipeQuerySet(models.QuerySet):
+    """QuerySet для модели Recipe."""
+
+    def favorited(self, user):
+        """Аннотирует queryset полем is_favorited."""
+        return self.annotate(
+            is_favorited=Exists(
+                FavoriteRecipe.objects.filter(recipe=OuterRef("pk"), user=user)
+            )
+        )
+
+    def in_shopping_cart(self, user):
+        """Аннотирует queryset полем is_in_shopping_cart."""
+        return self.annotate(
+            is_in_shopping_cart=Exists(
+                ShoppingList.objects.filter(recipe=OuterRef("pk"), user=user)
+            )
+        )
+
+
+class RecipeManager(models.Manager):
+    """Менеджер для модели Recipe."""
+
+    def get_queryset(self):
+        """Возвращает queryset для менеджера рецептов."""
+        return RecipeQuerySet(self.model, using=self._db)
+
+    def favorited(self, user):
+        """Возвращает аннотированный queryset с флагом is_favorited."""
+        return self.get_queryset().favorited(user)
+
+    def in_shopping_cart(self, user):
+        """Возвращает аннотированный queryset с флагом is_in_shopping_cart."""
+        return self.get_queryset().in_shopping_cart(user)
 
 
 class Ingredient(models.Model):

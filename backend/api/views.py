@@ -96,7 +96,7 @@ class SubscribeView(APIView):
                 {"ошибка": "вы на автора не подписаны"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
+        get_object_or_404(Subscribe, user=user, author=author).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -109,7 +109,7 @@ class SubscriptionsListView(generics.ListAPIView):
     def get_queryset(self) -> QuerySet[User]:
         """Получение списка подписок пользователя."""
         user: User = self.request.user
-        return User.objects.filter(followers__user=user)
+        return User.objects.filter(following__user=user)
 
 
 class TagViewSet(viewsets.ReadOnlyModelViewSet):
@@ -152,7 +152,6 @@ class RecipeViewSet(viewsets.ModelViewSet):
             queryset: QuerySet[Recipe] = queryset.favorited(
                 user
             ).in_shopping_cart(user)
-
         return queryset
 
     def get_serializer_class(self):
