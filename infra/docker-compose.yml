@@ -17,6 +17,8 @@ services:
     volumes:
       - static:/app/static
       - media:/app/media
+    depends_on:
+      - db
   frontend:
     build:
       context: ../frontend

@@ -10,25 +10,37 @@ class Command(BaseCommand):
 
     help = "Загрузка данных из CSV-файлов"
 
-    def create_ingredient(self, model, row):
-        """Создание ингредиента на основе данных из строки CSV."""
-        model.objects.create(name=row[0], measurement_unit=row[1])
+    def add_arguments(self, parser):
+        parser.add_argument("csv_path", type=str, help="Путь к CSV-файлу")
 
-    def handle(self, *args, **kwargs):
-        """Обработчик команды для выполнения загрузки данных."""
-        if Ingredient.objects.exists():
-            self.stdout.write(
-                self.style.SUCCESS(
-                    "Данные уже существуют, загрузка невозможна."
+    def bulk_create_ingredients(self, model, rows):
+        """Массовое создание ингредиентов на основе данных из строк CSV."""
+        ingredients = []
+        for row in rows:
+            name, measurement_unit = row[0], row[1]
+            existing_ingredient = model.objects.filter(name=name).exists()
+            if not existing_ingredient:
+                ingredients.append(
+                    model(name=name, measurement_unit=measurement_unit)
                 )
-            )
-            return
 
-        with open("data/ingredients.csv", encoding="utf8") as csvfile:
+        model.objects.bulk_create(ingredients)
+        return len(ingredients)
+
+    def handle(self, *args, **options):
+        """Обработчик команды для выполнения загрузки данных."""
+        csv_path = options["csv_path"]
+
+        with open(csv_path, encoding="utf8") as csvfile:
             reader = csv.reader(csvfile)
-            for row in reader:
-                self.create_ingredient(Ingredient, row)
+            rows = list(reader)
+
+            rows_count = len(rows)
+            bulk_count = self.bulk_create_ingredients(Ingredient, rows)
 
         self.stdout.write(
-            self.style.SUCCESS("Импорт данных завершился успешно!")
+            self.style.SUCCESS(
+                f"Импорт данных завершился успешно! "
+                f"Всего {bulk_count} записей было добавлено из {rows_count}."
+            )
         )

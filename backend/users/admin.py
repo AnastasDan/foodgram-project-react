@@ -1,11 +1,11 @@
 from django.contrib import admin
 
-from .models import MyUser, Subscribe
+from .models import Subscribe, User
 
 admin.site.empty_value_display = "Не задано"
 
 
-@admin.register(MyUser)
+@admin.register(User)
 class MyUserAdmin(admin.ModelAdmin):
     """Административная панель для управления пользователями."""
 

@@ -1,3 +1,5 @@
+from io import BytesIO
+
 from django.db.models import Sum
 from django.db.models.query import QuerySet
 from django.http import HttpResponse
@@ -20,7 +22,7 @@ from recipes.models import (
     ShoppingList,
     Tag
 )
-from users.models import MyUser, Subscribe
+from users.models import Subscribe, User
 
 from .filters import IngredientFilter, RecipeFilter
 from .permissions import OwnerOnlyPermission
@@ -30,11 +32,16 @@ from .serializers import (
     RecipeCreateSerializer,
     RecipeGETSerializer,
     ShoppingListSerializer,
+    SubscriptionCreateSerializer,
     SubscriptionSerializer,
     TagSerializer,
     UserGETSerializer
 )
-from .utils import add_or_remove_favorite_and_shopping_list
+from .utils import (
+    add_favorite_or_shopping_list,
+    generate_shopping_list_pdf,
+    remove_favorite_or_shopping_list
+)
 
 
 class MeView(APIView):
@@ -53,54 +60,43 @@ class SubscribeView(APIView):
 
     permission_classes: tuple[type[IsAuthenticated]] = (IsAuthenticated,)
 
-    def get_user_author(self, request, pk: int) -> tuple[MyUser, MyUser]:
+    def get_user_author(self, request, pk: int) -> tuple[User, User]:
         """Получение текущего пользователя и автора по идентификатору."""
-        user: MyUser = request.user
-        author: MyUser = get_object_or_404(MyUser, id=pk)
+        user: User = request.user
+        author: User = get_object_or_404(User, id=pk)
         return user, author
 
-    def check_subscription_exists(self, user: MyUser, author: MyUser) -> bool:
-        """Проверка наличия подписки."""
-        return Subscribe.objects.filter(user=user, author=author).exists()
-
     def post(self, request, pk: int = None) -> Response:
-        """Подписка на автора."""
+        """Обработка HTTP-запроса POST для создания подписки на автора."""
         user, author = self.get_user_author(
             request, pk
-        )  # type: tuple[MyUser, MyUser]
+        )  # type: tuple[User, User]
 
-        if self.check_subscription_exists(user, author):
-            return Response(
-                {"ошибка": "вы уже подписаны"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if user == author:
-            return Response(
-                {"ошибка": "нельзя подписываться на самого себя"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        serializer: type[SubscriptionSerializer] = SubscriptionSerializer(
-            author, data=request.data, context={"request": request}
+        serializer: type[
+            SubscriptionCreateSerializer
+        ] = SubscriptionCreateSerializer(
+            data={"user": user.id, "author": author.id},
+            context={"request": request},
         )
         serializer.is_valid(raise_exception=True)
-        Subscribe.objects.create(user=user, author=author)
+        serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def delete(self, request, pk: int = None) -> Response:
-        """Отписка от автора."""
+        """Обработка HTTP-запроса DELETE для удаления подписки на автора."""
         user, author = self.get_user_author(
             request, pk
-        )  # type: tuple[MyUser, MyUser]
+        )  # type: tuple[User, User]
 
-        if not self.check_subscription_exists(user, author):
+        subscribe: bool = Subscribe.objects.filter(
+            user=user, author=author
+        ).exists()
+        if not subscribe:
             return Response(
                 {"ошибка": "вы на автора не подписаны"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        get_object_or_404(Subscribe, user=user, author=author).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -110,11 +106,10 @@ class SubscriptionsListView(generics.ListAPIView):
     serializer_class: type[SubscriptionSerializer] = SubscriptionSerializer
     permission_classes: tuple[type[IsAuthenticated]] = (IsAuthenticated,)
 
-    def get_queryset(self) -> QuerySet[MyUser]:
+    def get_queryset(self) -> QuerySet[User]:
         """Получение списка подписок пользователя."""
-        user: MyUser = self.request.user
-        users: QuerySet[MyUser] = MyUser.objects.filter(following__user=user)
-        return self.paginate_queryset(users)
+        user: User = self.request.user
+        return User.objects.filter(followers__user=user)
 
 
 class TagViewSet(viewsets.ReadOnlyModelViewSet):
@@ -140,12 +135,25 @@ class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
 class RecipeViewSet(viewsets.ModelViewSet):
     """Представление для просмотра и редактирования рецептов."""
 
-    queryset: QuerySet[Recipe] = Recipe.objects.all()
     permission_classes: tuple[type[OwnerOnlyPermission]] = (
         OwnerOnlyPermission,
     )
     filter_backends: tuple[type[BaseFilterBackend]] = (DjangoFilterBackend,)
     filterset_class: type[RecipeFilter] = RecipeFilter
+
+    def get_queryset(self) -> QuerySet[Recipe]:
+        """Получает набор запросов для модели Recipe."""
+        user: User = self.request.user
+        queryset: QuerySet[Recipe] = Recipe.objects.select_related(
+            "author"
+        ).prefetch_related("tags", "ingredients")
+
+        if user.is_authenticated:
+            queryset: QuerySet[Recipe] = queryset.favorited(
+                user
+            ).in_shopping_cart(user)
+
+        return queryset
 
     def get_serializer_class(self):
         """Определение, какой сериализатор использовать."""
@@ -160,10 +168,15 @@ class RecipeViewSet(viewsets.ModelViewSet):
     )
     def favorite(self, request, pk: int = None) -> Response:
         """Добавление или удаление рецепта из избранного."""
-        user: MyUser = request.user
-        return add_or_remove_favorite_and_shopping_list(
-            request, user, FavoriteRecipe, FavoriteSerializer, pk
-        )
+        user: User = request.user
+
+        if request.method == "POST":
+            return add_favorite_or_shopping_list(
+                request, user, FavoriteRecipe, FavoriteSerializer, pk
+            )
+
+        elif request.method == "DELETE":
+            return remove_favorite_or_shopping_list(user, FavoriteRecipe, pk)
 
     @action(
         detail=True,
@@ -172,10 +185,15 @@ class RecipeViewSet(viewsets.ModelViewSet):
     )
     def shopping_cart(self, request, pk: int = None) -> Response:
         """Добавление или удаление рецепта из списка покупок."""
-        user: MyUser = request.user
-        return add_or_remove_favorite_and_shopping_list(
-            request, user, ShoppingList, ShoppingListSerializer, pk
-        )
+        user: User = request.user
+
+        if request.method == "POST":
+            return add_favorite_or_shopping_list(
+                request, user, ShoppingList, ShoppingListSerializer, pk
+            )
+
+        elif request.method == "DELETE":
+            return remove_favorite_or_shopping_list(user, ShoppingList, pk)
 
     @action(
         detail=False,
@@ -184,7 +202,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
     )
     def download_shopping_cart(self, request) -> HttpResponse:
         """Загрузка списка покупок ингредиентов в виде текстового файла."""
-        user: MyUser = request.user
+        user: User = request.user
         recipes_in_shopping_list: QuerySet[RecipeIngredient] = (
             RecipeIngredient.objects.filter(
                 recipe__in_shopping_lists__user=user
@@ -193,20 +211,14 @@ class RecipeViewSet(viewsets.ModelViewSet):
             .annotate(total_amount=Sum("amount"))
         )
 
-        shopping_list: list[str] = ["Список покупок:\n"]
-
-        for recipe in recipes_in_shopping_list:
-            name: str = recipe["ingredient__name"]
-            total_amount: int = recipe["total_amount"]
-            measurement_unit: str = recipe["ingredient__measurement_unit"]
-            shopping_list.append(
-                f"{name} ({measurement_unit}) - {total_amount}\n"
-            )
+        pdf_buffer: type[BytesIO] = generate_shopping_list_pdf(
+            recipes_in_shopping_list
+        )
 
         response: HttpResponse = HttpResponse(
-            shopping_list, content_type="text/plain"
+            pdf_buffer.getvalue(), content_type="application/pdf"
         )
         response[
             "Content-Disposition"
-        ] = 'attachment; filename="shopping_list.txt"'
+        ] = 'attachment; filename="shopping_list.pdf"'
         return response

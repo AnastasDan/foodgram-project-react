@@ -1,16 +1,19 @@
 from django.core.validators import RegexValidator
 from django.db import models
 
-from users.models import MyUser
+from foodgram.constants import MAX_CHAR_LENGTH, MAX_COLOR_LENGTH, REGEX
+from users.models import User
 
-from .constants import REGEX
+from .querysets import RecipeManager
 
 
 class Ingredient(models.Model):
     """Модель для представления ингредиентов."""
 
-    name = models.CharField("Название", max_length=200)
-    measurement_unit = models.CharField("Единица измерения", max_length=200)
+    name = models.CharField("Название", max_length=MAX_CHAR_LENGTH)
+    measurement_unit = models.CharField(
+        "Единица измерения", max_length=MAX_CHAR_LENGTH
+    )
 
     class Meta:
         ordering = ("id",)
@@ -25,11 +28,11 @@ class Ingredient(models.Model):
 class Tag(models.Model):
     """Модель для представления тэгов."""
 
-    name = models.CharField("Название тэга", max_length=200)
-    color = models.CharField("Цвет", max_length=7)
+    name = models.CharField("Название тэга", max_length=MAX_CHAR_LENGTH)
+    color = models.CharField("Цвет", max_length=MAX_COLOR_LENGTH)
     slug = models.SlugField(
         "Slug",
-        max_length=200,
+        max_length=MAX_CHAR_LENGTH,
         unique=True,
         validators=[
             RegexValidator(regex=REGEX, message="Недопустимый символ")
@@ -54,15 +57,16 @@ class Recipe(models.Model):
         Ingredient, through="RecipeIngredient"
     )
     text = models.TextField("Описание")
-    name = models.CharField("Название рецепта", max_length=200)
+    name = models.CharField("Название рецепта", max_length=MAX_CHAR_LENGTH)
     image = models.ImageField("Фотография", upload_to="recipes/images/")
     cooking_time = models.IntegerField("Время приготовления")
     author = models.ForeignKey(
-        MyUser,
+        User,
         related_name="recipes",
         on_delete=models.CASCADE,
         verbose_name="Автор",
     )
+    objects = RecipeManager()
 
     class Meta:
         ordering = ("-id",)
@@ -104,7 +108,7 @@ class FavoriteRecipe(models.Model):
     """Модель для представления избранных рецептов."""
 
     user = models.ForeignKey(
-        MyUser,
+        User,
         related_name="favorite_recipes",
         on_delete=models.CASCADE,
         verbose_name="Пользователь",
@@ -135,7 +139,7 @@ class ShoppingList(models.Model):
     """Модель для представления списков покупок."""
 
     user = models.ForeignKey(
-        MyUser,
+        User,
         related_name="shopping_lists",
         on_delete=models.CASCADE,
         verbose_name="Пользователь",

@@ -1,50 +1,87 @@
-from django.core.exceptions import ObjectDoesNotExist
+import io
+
 from django.shortcuts import get_object_or_404
 
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
 from rest_framework import status
 from rest_framework.response import Response
 
 from recipes.models import Ingredient, Recipe, RecipeIngredient
 
 
-def add_or_remove_favorite_and_shopping_list(
-    request, user, model, serializer, pk
-):
-    """Добавляет или удаляет рецепт из избранного или списка покупок."""
-    if request.method == "POST":
-        try:
-            recipe = Recipe.objects.get(id=pk)
-        except ObjectDoesNotExist:
-            return Response(status=status.HTTP_400_BAD_REQUEST)
+def add_favorite_or_shopping_list(request, user, model, serializer_class, pk):
+    """Добавляет рецепт в избранное или список покупок."""
+    if not (recipe := Recipe.objects.filter(id=pk).first()):
+        return Response(status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = serializer(
-            data={"user": user.id, "recipe": recipe.id},
-            context={"request": request},
+    serializer = serializer_class(
+        data={"user": user.id, "recipe": recipe.id},
+        context={"request": request},
+    )
+    serializer.is_valid(raise_exception=True)
+    serializer.save(user=user, recipe=recipe)
+
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+def remove_favorite_or_shopping_list(user, model, pk):
+    """Удаляет рецепт из избранного или списка покупок."""
+    recipe = get_object_or_404(Recipe, id=pk)
+
+    recipe_delete = model.objects.filter(user=user, recipe=recipe)
+    if not recipe_delete.exists():
+        return Response(
+            {"ошибка": "рецепт не найден в избранном или списке покупок"},
+            status=status.HTTP_400_BAD_REQUEST,
         )
-        serializer.is_valid(raise_exception=True)
 
-        model.objects.create(user=user, recipe=recipe)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    elif request.method == "DELETE":
-        recipe = get_object_or_404(Recipe, id=pk)
-
-        recipe_delete = model.objects.filter(user=user, recipe=recipe)
-        if not recipe_delete.exists():
-            return Response(
-                {"errors": "ошибка"}, status=status.HTTP_400_BAD_REQUEST
-            )
-
-        recipe_delete.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+    recipe_delete.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 def create_update_ingredients(recipe, ingredients_data):
     """Создает или обновляет ингредиенты для рецепта."""
+    recipe_ingredients = []
+
     for ingredient_data in ingredients_data:
         ingredient_id = ingredient_data.get("id")
         amount = ingredient_data.get("amount")
         ingredient = get_object_or_404(Ingredient, id=ingredient_id)
-        RecipeIngredient.objects.create(
+
+        recipe_ingredient = RecipeIngredient(
             recipe=recipe, ingredient=ingredient, amount=amount
         )
+        recipe_ingredients.append(recipe_ingredient)
+
+    RecipeIngredient.objects.bulk_create(recipe_ingredients)
+
+
+def generate_shopping_list_pdf(recipes_in_shopping_list):
+    """Генерирует PDF с списком покупок на основе списка рецептов."""
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer)
+
+    pdfmetrics.registerFont(TTFont("Arial", "./recipes/fonts/arial.ttf"))
+    p.setFont("Arial", 15)
+
+    p.drawString(100, 800, "Список покупок:")
+
+    y_position = 780
+
+    for recipe in recipes_in_shopping_list:
+        name = recipe["ingredient__name"]
+        total_amount = recipe["total_amount"]
+        measurement_unit = recipe["ingredient__measurement_unit"]
+
+        item_text = f"{name} ({measurement_unit}) - {total_amount}"
+        p.drawString(100, y_position, item_text)
+
+        y_position -= 20
+
+    p.showPage()
+    p.save()
+
+    buffer.seek(0)
+    return buffer

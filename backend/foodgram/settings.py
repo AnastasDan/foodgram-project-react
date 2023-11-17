@@ -113,7 +113,7 @@ USE_L10N = True
 USE_TZ = True
 
 
-AUTH_USER_MODEL = "users.MyUser"
+AUTH_USER_MODEL = "users.User"
 
 
 STATIC_URL = "/static/"
@@ -144,7 +144,7 @@ DJOSER = {
         "current_user": "api.serializers.UserGETSerializer",
     },
     "PERMISSIONS": {
-        "user": ["api.permissions.OwnerOrReadOnlyPermission"],
+        'user': ['djoser.permissions.CurrentUserOrAdminOrReadOnly'],
         "user_list": ["rest_framework.permissions.AllowAny"],
     },
 }
