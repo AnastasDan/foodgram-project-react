@@ -9,37 +9,25 @@ from users.models import User
 class RecipeQuerySet(models.QuerySet):
     """QuerySet для модели Recipe."""
 
-    def favorited(self, user):
+    def favorited(self, user_id):
         """Аннотирует queryset полем is_favorited."""
         return self.annotate(
             is_favorited=Exists(
-                FavoriteRecipe.objects.filter(recipe=OuterRef("pk"), user=user)
+                FavoriteRecipe.objects.filter(
+                    recipe=OuterRef("pk"), user=user_id
+                )
             )
         )
 
-    def in_shopping_cart(self, user):
+    def in_shopping_cart(self, user_id):
         """Аннотирует queryset полем is_in_shopping_cart."""
         return self.annotate(
             is_in_shopping_cart=Exists(
-                ShoppingList.objects.filter(recipe=OuterRef("pk"), user=user)
+                ShoppingList.objects.filter(
+                    recipe=OuterRef("pk"), user=user_id
+                )
             )
         )
-
-
-class RecipeManager(models.Manager):
-    """Менеджер для модели Recipe."""
-
-    def get_queryset(self):
-        """Возвращает queryset для менеджера рецептов."""
-        return RecipeQuerySet(self.model, using=self._db)
-
-    def favorited(self, user):
-        """Возвращает аннотированный queryset с флагом is_favorited."""
-        return self.get_queryset().favorited(user)
-
-    def in_shopping_cart(self, user):
-        """Возвращает аннотированный queryset с флагом is_in_shopping_cart."""
-        return self.get_queryset().in_shopping_cart(user)
 
 
 class Ingredient(models.Model):
@@ -101,7 +89,7 @@ class Recipe(models.Model):
         on_delete=models.CASCADE,
         verbose_name="Автор",
     )
-    objects = RecipeManager()
+    objects = RecipeQuerySet.as_manager()
 
     class Meta:
         ordering = ("-id",)
