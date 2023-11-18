@@ -1,4 +1,4 @@
-from io import BytesIO
+from typing import Optional
 
 from django.db.models import Sum
 from django.db.models.query import QuerySet
@@ -88,16 +88,16 @@ class SubscribeView(APIView):
             request, pk
         )  # type: tuple[User, User]
 
-        subscribe: bool = Subscribe.objects.filter(
+        if subscribe := Subscribe.objects.filter(
             user=user, author=author
-        ).exists()
-        if not subscribe:
-            return Response(
-                {"ошибка": "вы на автора не подписаны"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        get_object_or_404(Subscribe, user=user, author=author).delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        ).first():
+            subscribe.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        return Response(
+            {"ошибка": "вы не подписаны на этого автора."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
 
 class SubscriptionsListView(generics.ListAPIView):
@@ -143,15 +143,17 @@ class RecipeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self) -> QuerySet[Recipe]:
         """Получает набор запросов для модели Recipe."""
-        user: User = self.request.user
+        user_id: Optional[int] = self.request.user.id
+        print(user_id)
         queryset: QuerySet[Recipe] = Recipe.objects.select_related(
             "author"
         ).prefetch_related("tags", "ingredients")
 
-        if user.is_authenticated:
+        if user_id is not None:
             queryset: QuerySet[Recipe] = queryset.favorited(
-                user
-            ).in_shopping_cart(user)
+                user_id
+            ).in_shopping_cart(user_id)
+
         return queryset
 
     def get_serializer_class(self):
@@ -210,7 +212,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
             .annotate(total_amount=Sum("amount"))
         )
 
-        pdf_buffer: type[BytesIO] = generate_shopping_list_pdf(
+        pdf_buffer: HttpResponse = generate_shopping_list_pdf(
             recipes_in_shopping_list
         )
 

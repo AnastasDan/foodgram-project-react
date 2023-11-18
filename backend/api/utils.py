@@ -1,5 +1,4 @@
-import io
-
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 
 from reportlab.pdfbase import pdfmetrics
@@ -60,8 +59,12 @@ def create_update_ingredients(recipe, ingredients_data):
 
 def generate_shopping_list_pdf(recipes_in_shopping_list):
     """Генерирует PDF с списком покупок на основе списка рецептов."""
-    buffer = io.BytesIO()
-    p = canvas.Canvas(buffer)
+    response = HttpResponse(content_type="application/pdf")
+    response[
+        "Content-Disposition"
+    ] = 'attachment; filename="shopping_list.pdf"'
+
+    p = canvas.Canvas(response)
 
     pdfmetrics.registerFont(TTFont("Arial", "./recipes/fonts/arial.ttf"))
     p.setFont("Arial", 15)
@@ -83,5 +86,4 @@ def generate_shopping_list_pdf(recipes_in_shopping_list):
     p.showPage()
     p.save()
 
-    buffer.seek(0)
-    return buffer
+    return response
