@@ -144,7 +144,6 @@ class RecipeViewSet(viewsets.ModelViewSet):
     def get_queryset(self) -> QuerySet[Recipe]:
         """Получает набор запросов для модели Recipe."""
         user_id: Optional[int] = self.request.user.id
-        print(user_id)
         queryset: QuerySet[Recipe] = Recipe.objects.select_related(
             "author"
         ).prefetch_related("tags", "ingredients")
